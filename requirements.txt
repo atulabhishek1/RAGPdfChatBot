@@ -10,3 +10,4 @@ streamlit
 langchain-core
 langchain-groq
 -e . ##looks for setup.py in the current directory
+sentence-transformers
