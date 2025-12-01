@@ -11,3 +11,4 @@ langchain-core
 langchain-groq
 sentence-transformers
 -e . ##looks for setup.py in the current directory
+sentence-transformers
