@@ -42,53 +42,63 @@ def create_embeddings(splits):
 def create_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
 
-    # --- Rewriting question based on chat history ---
-    contextualize_q_prompt = ChatPromptTemplate.from_messages([
+    # Rewriting prompt
+    rewrite_prompt = ChatPromptTemplate.from_messages([
         ("system",
          "Rewrite the user question into a standalone question. "
-         "Use chat history only for understanding, do NOT answer."),
+         "Use chat history for understanding but do NOT answer it."),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}")
     ])
 
-    def contextualize_question(inputs):
+    # 1️⃣ Rewrite Question
+    def rewrite_step(inputs):
+        # RunnableWithMessageHistory injects chat history into inputs["chat_history"]
         rewritten = llm.invoke(
-            contextualize_q_prompt.format_messages(
-                chat_history=inputs["chat_history"],
-                input=inputs["input"]
+            rewrite_prompt.format_messages(
+                input=inputs["input"],
+                chat_history=inputs["chat_history"]
             )
         )
-        return rewritten.content
+        return {
+            "rewritten_question": rewritten.content,
+            "chat_history": inputs["chat_history"]
+        }
 
-    # --- Retrieval step ---
-    def retrieve_docs(inputs):
-        standalone_q = contextualize_question(inputs)
-        docs = retriever.invoke(standalone_q)
-        return {"docs": docs, "question": standalone_q}
+    # 2️⃣ Retrieve documents
+    def retrieve_step(inputs):
+        docs = retriever.invoke(inputs["rewritten_question"])
+        return {
+            "docs": docs,
+            "question": inputs["rewritten_question"],
+            "chat_history": inputs["chat_history"]
+        }
 
-    # --- QA prompt ---
+    # QA Prompt
     qa_prompt = ChatPromptTemplate.from_messages([
         ("system",
-         "You are an assistant for question-answering using retrieved context. "
-         "If you don’t know the answer, say so. Answer in max three sentences.\n"
-         "Context:\n{context}"),
+         "You are an assistant for QA tasks based on retrieved context. "
+         "If unsure, say 'I don't know'. Max three sentences.\n\nContext:\n{context}"),
         MessagesPlaceholder("chat_history"),
         ("human", "{question}")
     ])
 
-    def run_qa(inputs):
+    # 3️⃣ Answer step
+    def answer_step(inputs):
         context_text = "\n\n".join([doc.page_content for doc in inputs["docs"]])
+
         messages = qa_prompt.format_messages(
             context=context_text,
-            chat_history=inputs["chat_history"],
-            question=inputs["question"]
+            question=inputs["question"],
+            chat_history=inputs["chat_history"]
         )
+
         return llm.invoke(messages)
 
-    # --- Build final RAG chain ---
-    rag_chain = (
-        RunnablePassthrough.assign(step=retrieve_docs)
-        | run_qa
+    # Build final chain
+    return (
+        RunnablePassthrough()
+        | rewrite_step
+        | retrieve_step
+        | answer_step
     )
-
-    return rag_chain

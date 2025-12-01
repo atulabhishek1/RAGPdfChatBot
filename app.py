@@ -33,7 +33,7 @@ def main():
         return
 
     # Initialize LLM
-    llm = ChatGroq(groq_api_key=api_key, model_name="Gemma2-9b-It")
+    llm = ChatGroq(groq_api_key=api_key, model_name="llama-3.1-8b-instant")
 
     # Session storage
     if 'store' not in st.session_state:
